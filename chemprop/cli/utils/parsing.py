@@ -1,0 +1,1107 @@
+import logging
+import os
+from os import PathLike
+from pathlib import Path
+import hashlib
+import json
+import pickle
+from typing import Literal, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+from rdkit import Chem
+from torch import nn
+
+from chemprop.data.datapoints import (
+    LazyMoleculeDatapoint,
+    MolAtomBondDatapoint,
+    MoleculeDatapoint,
+    ReactionDatapoint,
+)
+from chemprop.data.datasets import (
+    CuikmolmakerDataset,
+    MolAtomBondDataset,
+    MoleculeDataset,
+    ReactionDataset,
+)
+from chemprop.featurizers.atom import get_multi_hot_atom_featurizer
+from chemprop.featurizers.bond import MultiHotBondFeaturizer, RIGRBondFeaturizer
+from chemprop.featurizers.molecule import MoleculeFeaturizerRegistry
+from chemprop.featurizers.molgraph import (
+    CondensedGraphOfReactionFeaturizer,
+    CuikmolmakerMolGraphFeaturizer,
+    RxnMode,
+    SimpleMoleculeMolGraphFeaturizer,
+)
+from chemprop.featurizers.fingerprints import concatenated_native_1d_fingerprint
+from chemprop.featurizers.chemberta import chemberta_1d_embeddings
+from chemprop.featurizers.geometry import combine_geometry_graphs, mace_geometry_graph, mmff_geometry_graph
+from chemprop.featurizers.molformer import molformer_1d_embeddings, molformer_token_features
+from chemprop.featurizers.unimol import unimol_3d_embeddings
+from chemprop.utils import create_and_call_object, make_mol, parallel_execute
+logger = logging.getLogger(__name__)
+
+
+def _mace_graph_cache_path(
+    cache_dir: PathLike | None,
+    p_data: PathLike,
+    smiss: list[list[str]] | None,
+    keep_h: bool,
+    add_h: bool,
+    ignore_stereo: bool,
+    reorder_atoms: bool,
+    mace_model: str,
+    mace_model_path: str | None,
+    mace_dtype: str,
+    mace_optimize: bool,
+    mace_fmax: float,
+    mace_num_layers: int | None,
+) -> Path | None:
+    if cache_dir is None or smiss is None:
+        return None
+
+    model_path = None
+    if mace_model_path is not None:
+        model_path = str(Path(mace_model_path).expanduser().resolve())
+
+    payload = {
+        "version": 1,
+        "data": str(Path(p_data).expanduser().resolve()),
+        "smiles": smiss,
+        "keep_h": keep_h,
+        "add_h": add_h,
+        "ignore_stereo": ignore_stereo,
+        "reorder_atoms": reorder_atoms,
+        "mace_model": mace_model,
+        "mace_model_path": model_path,
+        "mace_dtype": mace_dtype,
+        "mace_optimize": mace_optimize,
+        "mace_fmax": mace_fmax,
+        "mace_num_layers": mace_num_layers,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    cache_root = Path(cache_dir).expanduser()
+    return cache_root / f"mace_graphs_{digest}.pkl"
+
+
+def _load_geometry_graph_cache(path: Path | None, n_expected: int) -> list | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        with path.open("rb") as f:
+            graphs = pickle.load(f)
+    except Exception as exc:
+        logger.warning("Failed to load MACE graph cache %s: %s. Recomputing.", path, exc)
+        return None
+
+    if not isinstance(graphs, list) or len(graphs) != n_expected:
+        logger.warning("Ignoring stale MACE graph cache %s. Recomputing.", path)
+        return None
+
+    logger.info("Loaded cached MACE 3D graphs from %s", path)
+    return graphs
+
+
+def _load_geometry_graph(path: Path | None):
+    if path is None or not path.exists():
+        return None
+    try:
+        if path.suffix == ".pt":
+            import torch
+
+            return torch.load(path, map_location="cpu", weights_only=False)
+        with path.open("rb") as f:
+            return pickle.load(f)
+    except Exception as exc:
+        logger.warning("Failed to load 3D geometry graph cache %s: %s. Recomputing.", path, exc)
+        return None
+
+
+def _save_geometry_graph(path: Path | None, graph) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+        if path.suffix == ".pt":
+            import torch
+
+            torch.save(graph, tmp_path)
+        else:
+            with tmp_path.open("wb") as f:
+                pickle.dump(graph, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp_path.replace(path)
+    except Exception as exc:
+        logger.warning("Failed to save 3D geometry graph cache %s: %s", path, exc)
+
+
+def _save_geometry_graph_cache(path: Path | None, graphs: list) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+        with tmp_path.open("wb") as f:
+            pickle.dump(graphs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp_path.replace(path)
+        logger.info("Saved MACE 3D graph cache to %s", path)
+    except Exception as exc:
+        logger.warning("Failed to save MACE graph cache %s: %s", path, exc)
+
+
+def _molecule_geometry_cache_path(
+    cache_dir: PathLike | None,
+    mol,
+    backend: str,
+    geometry_num_conformers: int,
+    keep_h: bool,
+    add_h: bool,
+    ignore_stereo: bool,
+    reorder_atoms: bool,
+) -> Path | None:
+    if cache_dir is None or mol is None or backend == "mace":
+        return None
+    try:
+        canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+    except Exception:
+        return None
+    payload = {
+        "version": 1,
+        "backend": backend,
+        "canonical_smiles": canonical_smiles,
+        "keep_h": bool(keep_h),
+        "add_h": bool(add_h),
+        "ignore_stereo": bool(ignore_stereo),
+        "reorder_atoms": bool(reorder_atoms),
+        "geometry_num_conformers": int(geometry_num_conformers),
+        "distance_cutoff": 4.5,
+        "random_seed": 0xC0FFEE,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    return Path(cache_dir).expanduser() / backend / f"{digest}.pt"
+
+
+def _geometry_graph_from_mol(
+    mol,
+    backend: str,
+    mace_model: str,
+    mace_model_path: str | None,
+    mace_device: str,
+    mace_dtype: str,
+    mace_optimize: bool,
+    mace_fmax: float,
+    mace_num_layers: int | None,
+    geometry_num_conformers: int = 1,
+    geometry_cache_dir: PathLike | None = None,
+    keep_h: bool = False,
+    add_h: bool = False,
+    ignore_stereo: bool = False,
+    reorder_atoms: bool = False,
+):
+    cache_path = _molecule_geometry_cache_path(
+        geometry_cache_dir,
+        mol,
+        backend,
+        geometry_num_conformers,
+        keep_h,
+        add_h,
+        ignore_stereo,
+        reorder_atoms,
+    )
+    cached_graph = _load_geometry_graph(cache_path)
+    if cached_graph is not None:
+        return cached_graph
+
+    if backend == "mace":
+        return mace_geometry_graph(
+            mol,
+            model=mace_model,
+            model_path=mace_model_path,
+            device=mace_device,
+            default_dtype=mace_dtype,
+            optimize=mace_optimize,
+            fmax=mace_fmax,
+            num_layers=mace_num_layers,
+        )
+    graph = mmff_geometry_graph(mol, num_conformers=geometry_num_conformers)
+    _save_geometry_graph(cache_path, graph)
+    return graph
+
+
+def parse_csv(
+    path: PathLike,
+    smiles_cols: Sequence[str] | None,
+    rxn_cols: Sequence[str] | None,
+    target_cols: Sequence[str] | None,
+    ignore_cols: Sequence[str] | None,
+    splits_col: str | None,
+    weight_col: str | None,
+    descriptor_cols: Sequence[str] | None,
+    bounded: bool = False,
+    no_header_row: bool = False,
+):
+    df = pd.read_csv(path, header=None if no_header_row else "infer", index_col=False)
+
+    if smiles_cols is not None and rxn_cols is not None:
+        smiss = df[smiles_cols].T.values.tolist()
+        rxnss = df[rxn_cols].T.values.tolist()
+        input_cols = [*smiles_cols, *rxn_cols]
+    elif smiles_cols is not None and rxn_cols is None:
+        smiss = df[smiles_cols].T.values.tolist()
+        rxnss = None
+        input_cols = smiles_cols
+    elif smiles_cols is None and rxn_cols is not None:
+        smiss = None
+        rxnss = df[rxn_cols].T.values.tolist()
+        input_cols = rxn_cols
+    else:
+        smiss = df.iloc[:, [0]].T.values.tolist()
+        rxnss = None
+        input_cols = [df.columns[0]]
+
+    descriptor_cols = list(descriptor_cols or [])
+    X_d_extra = df[descriptor_cols].to_numpy(np.single) if descriptor_cols else None
+
+    if target_cols is None:
+        target_cols = list(
+            column
+            for column in df.columns
+            if column
+            not in set(  # if splits or weight is None, df.columns will never have None
+                input_cols + (ignore_cols or []) + descriptor_cols + [splits_col] + [weight_col]
+            )
+        )
+
+    Y = df[target_cols]
+    weights = None if weight_col is None else df[weight_col].to_numpy(np.single)
+
+    if bounded:
+        Y = Y.astype(str)
+        lt_mask = Y.applymap(lambda x: "<" in x).to_numpy()
+        gt_mask = Y.applymap(lambda x: ">" in x).to_numpy()
+        Y = Y.applymap(lambda x: x.strip("<").strip(">")).to_numpy(np.single)
+    else:
+        Y = Y.to_numpy(np.single)
+        lt_mask = None
+        gt_mask = None
+
+    return smiss, rxnss, Y, weights, lt_mask, gt_mask, X_d_extra
+
+
+def get_column_names(
+    path: PathLike,
+    smiles_cols: Sequence[str] | None,
+    rxn_cols: Sequence[str] | None,
+    target_cols: Sequence[str] | None,
+    ignore_cols: Sequence[str] | None,
+    splits_col: str | None,
+    weight_col: str | None,
+    no_header_row: bool = False,
+) -> tuple[list[str], list[str]]:
+    df_cols = pd.read_csv(path, index_col=False, nrows=0).columns.tolist()
+
+    if no_header_row:
+        return ["SMILES"], ["pred_" + str(i) for i in range((len(df_cols) - 1))]
+
+    input_cols = (smiles_cols or []) + (rxn_cols or [])
+
+    if len(input_cols) == 0:
+        input_cols = [df_cols[0]]
+
+    if target_cols is None:
+        target_cols = list(
+            column
+            for column in df_cols
+            if column
+            not in set(
+                input_cols + (ignore_cols or []) + ([splits_col] or []) + ([weight_col] or [])
+            )
+        )
+
+    return input_cols, target_cols
+
+
+def make_datapoints(
+    smiss: list[list[str]] | None,
+    rxnss: list[list[str]] | None,
+    Y: np.ndarray,
+    weights: np.ndarray | None,
+    lt_mask: np.ndarray | None,
+    gt_mask: np.ndarray | None,
+    X_d: np.ndarray | None,
+    V_fss: list[list[np.ndarray] | list[None]] | None,
+    E_fss: list[list[np.ndarray] | list[None]] | None,
+    V_dss: list[list[np.ndarray] | list[None]] | None,
+    molecule_featurizers: list[str] | None,
+    keep_h: bool,
+    add_h: bool,
+    ignore_stereo: bool,
+    reorder_atoms: bool,
+    use_cuikmolmaker_featurization: bool,
+    add_1d_fingerprints: bool = True,
+    use_molformer_1d: bool = False,
+    trainable_molformer_1d: bool = False,
+    molformer_model: str = "ibm-research/MoLFormer-XL-both-10pct",
+    molformer_cache_dir: PathLike | None = None,
+    molformer_device: str = "cpu",
+    molformer_max_length: int = 256,
+    molformer_pooling: str = "pooler",
+    molformer_batch_size: int = 32,
+    use_chemberta_1d: bool = False,
+    chemberta_model: str = "DeepChem/ChemBERTa-77M-MLM",
+    chemberta_cache_dir: PathLike | None = None,
+    chemberta_device: str = "cpu",
+    chemberta_max_length: int = 256,
+    chemberta_pooling: str = "mean",
+    chemberta_batch_size: int = 32,
+    use_unimol_3d: bool = False,
+    unimol_model_name: str = "unimolv1",
+    unimol_model_path: str | None = None,
+    unimol_cache_dir: PathLike | None = None,
+    unimol_device: str = "cpu",
+    unimol_batch_size: int = 32,
+    unimol_remove_hs: bool = False,
+    add_3d_geometry_graphs: bool = False,
+    geometry_graph_backend: str = "mmff",
+    mace_model: str = "medium",
+    mace_model_path: str | None = None,
+    mace_device: str = "cpu",
+    mace_dtype: str = "float32",
+    mace_optimize: bool = True,
+    mace_fmax: float = 0.03,
+    mace_num_layers: int | None = None,
+    geometry_graph_cache_path: PathLike | None = None,
+    geometry_cache_dir: PathLike | None = None,
+    geometry_num_conformers: int = 1,
+    n_workers: int = 0,
+) -> tuple[
+    list[list[MoleculeDatapoint]] | list[list[LazyMoleculeDatapoint]], list[list[ReactionDatapoint]]
+]:
+    """Make the :class:`MoleculeDatapoint`s and :class:`ReactionDatapoint`s for a given
+    dataset.
+
+    Parameters
+    ----------
+    smiss : list[list[str]] | None
+        a list of ``j`` lists of ``n`` SMILES strings, where ``j`` is the number of molecules per
+        datapoint and ``n`` is the number of datapoints. If ``None``, the corresponding list of
+        :class:`MoleculeDatapoint`\s will be empty.
+    rxnss : list[list[str]] | None
+        a list of ``k`` lists of ``n`` reaction SMILES strings, where ``k`` is the number of
+        reactions per datapoint. If ``None``, the corresponding list of :class:`ReactionDatapoint`\s
+        will be empty.
+    Y : np.ndarray
+        the target values of shape ``n x m``, where ``m`` is the number of targets
+    weights : np.ndarray | None
+        the weights of the datapoints to use in the loss function of shape ``n``. If ``None``,
+        the weights all default to 1.
+    lt_mask : np.ndarray | None
+        a boolean mask of shape ``n x m`` indicating whether the targets are less than inequality
+        targets. If ``None``, ``lt_mask`` for all datapoints will be ``None``.
+    gt_mask : np.ndarray | None
+        a boolean mask of shape ``n x m`` indicating whether the targets are greater than inequality
+        targets. If ``None``, ``gt_mask`` for all datapoints will be ``None``.
+    X_d : np.ndarray | None
+        the extra descriptors of shape ``n x p``, where ``p`` is the number of extra descriptors. If
+        ``None``, ``x_d`` for all datapoints will be ``None``.
+    V_fss : list[list[np.ndarray] | list[None]] | None
+        a list of ``j`` lists of ``n`` np.ndarrays each of shape ``v_jn x q_j``, where ``v_jn`` is
+        the number of atoms in the j-th molecule of the n-th datapoint and ``q_j`` is the number of
+        extra atom features used for the j-th molecules. Any of the ``j`` lists can be a list of
+        None values if the corresponding component does not use extra atom features. If ``None``,
+        ``V_f`` for all datapoints will be ``None``.
+    E_fss : list[list[np.ndarray] | list[None]] | None
+        a list of ``j`` lists of ``n`` np.ndarrays each of shape ``e_jn x r_j``, where ``e_jn`` is
+        the number of bonds in the j-th molecule of the n-th datapoint and ``r_j`` is the number of
+        extra bond features used for the j-th molecules. Any of the ``j`` lists can be a list of
+        None values if the corresponding component does not use extra bond features. If ``None``,
+        ``E_f`` for all datapoints will be ``None``.
+    V_dss : list[list[np.ndarray] | list[None]] | None
+        a list of ``j`` lists of ``n`` np.ndarrays each of shape ``v_jn x s_j``, where ``s_j`` is
+        the number of extra atom descriptors used for the j-th molecules. Any of the ``j`` lists can
+        be a list of None values if the corresponding component does not use extra atom features. If
+        ``None``, ``V_d`` for all datapoints will be ``None``.
+    molecule_featurizers : list[str] | None
+        a list of molecule featurizer names to generate additional molecule features to use as extra
+        descriptors. If there are multiple molecules per datapoint, the featurizers will be applied
+        to each molecule and concatenated. Note that a :code:`ReactionDatapoint` has two
+        RDKit :class:`~rdkit.Chem.Mol` objects, reactant(s) and product(s). Each
+        ``molecule_featurizer`` will be applied to both of these objects.
+    keep_h : bool
+        whether to keep hydrogen atoms
+    add_h : bool
+        whether to add hydrogen atoms
+    ignore_stereo : bool
+        whether to ignore stereo information
+    n_workers : bool
+        number of workers to use to prepare molecules
+
+    Returns
+    -------
+    list[list[MoleculeDatapoint]]
+        a list of ``j`` lists of ``n`` :class:`MoleculeDatapoint`\s
+    list[list[ReactionDatapoint]]
+        a list of ``k`` lists of ``n`` :class:`ReactionDatapoint`\s
+    .. note::
+        either ``j`` or ``k`` may be 0, in which case the corresponding list will be empty.
+
+    Raises
+    ------
+    ValueError
+        if both ``smiss`` and ``rxnss`` are ``None``.
+        if ``smiss`` and ``rxnss`` are both given and have different lengths.
+    """
+    if smiss is None and rxnss is None:
+        raise ValueError("args 'smiss' and 'rnxss' were both `None`!")
+    elif rxnss is None:
+        N = len(smiss[0])
+        rxnss = []
+    elif smiss is None:
+        N = len(rxnss[0])
+        smiss = []
+    elif len(smiss[0]) != len(rxnss[0]):
+        raise ValueError(
+            f"args 'smiss' and 'rxnss' must have same length! got {len(smiss[0])} and {len(rxnss[0])}"
+        )
+    else:
+        N = len(smiss[0])
+
+    weights = np.ones(N, dtype=np.single) if weights is None else weights
+    gt_mask = [None] * N if gt_mask is None else gt_mask
+    lt_mask = [None] * N if lt_mask is None else lt_mask
+
+    n_mols = len(smiss) if smiss else 0
+    V_fss = [[None] * N] * n_mols if V_fss is None else V_fss
+    E_fss = [[None] * N] * n_mols if E_fss is None else E_fss
+    V_dss = [[None] * N] * n_mols if V_dss is None else V_dss
+
+    if use_cuikmolmaker_featurization:
+        mol_data = [
+            LazyMoleculeDatapoint(
+                smiles=smiss[0][i],  # cuikmolmaker only supports single molecule datapoints
+                _keep_h=keep_h,
+                _add_h=add_h,
+                _ignore_stereo=ignore_stereo,
+                _reorder_atoms=reorder_atoms,
+                name=smiss[0][i],
+                y=Y[i],
+                weight=weights[i],
+                gt_mask=gt_mask[i],
+                lt_mask=lt_mask[i],
+                # x_d=X_d[i],
+                x_phase=None,
+                V_f=V_fss[0][i],
+                E_f=E_fss[0][i],
+                V_d=V_dss[0][i],
+            )
+            for i in range(N)
+        ]
+
+        # LazyMoleculeDatapoint makes the mol when dp.mol is called instead of accepting it as an
+        # argument, so we can't use molecule featurizers until after making the datapoints.
+        if X_d is None and molecule_featurizers is None:
+            X_d = [None] * N
+        elif molecule_featurizers is None:
+            pass
+        else:
+            molecule_featurizers = [MoleculeFeaturizerRegistry[mf]() for mf in molecule_featurizers]
+            mol_descriptors = np.vstack(
+                [np.hstack([mf(dp.mol) for mf in molecule_featurizers]) for dp in mol_data]
+            )
+            X_d = mol_descriptors if X_d is None else np.hstack([X_d, mol_descriptors])
+
+        if use_unimol_3d:
+            unimol_array = unimol_3d_embeddings(
+                [dp.smiles for dp in mol_data],
+                model_name=unimol_model_name,
+                model_path=unimol_model_path,
+                cache_dir=unimol_cache_dir,
+                device=unimol_device,
+                batch_size=unimol_batch_size,
+                remove_hs=unimol_remove_hs,
+            )
+            X_d = (
+                unimol_array
+                if X_d is None or isinstance(X_d, list)
+                else np.hstack([unimol_array, X_d])
+            )
+
+        if add_1d_fingerprints:
+            if use_molformer_1d:
+                if trainable_molformer_1d:
+                    fp_array = molformer_token_features(
+                        [dp.smiles for dp in mol_data],
+                        model_name=molformer_model,
+                        max_length=molformer_max_length,
+                    )
+                else:
+                    fp_array = molformer_1d_embeddings(
+                        [dp.smiles for dp in mol_data],
+                        model_name=molformer_model,
+                        cache_dir=molformer_cache_dir,
+                        device=molformer_device,
+                        max_length=molformer_max_length,
+                        pooling=molformer_pooling,
+                        batch_size=molformer_batch_size,
+                    )
+            elif use_chemberta_1d:
+                fp_array = chemberta_1d_embeddings(
+                    [dp.smiles for dp in mol_data],
+                    model_name=chemberta_model,
+                    cache_dir=chemberta_cache_dir,
+                    device=chemberta_device,
+                    max_length=chemberta_max_length,
+                    pooling=chemberta_pooling,
+                    batch_size=chemberta_batch_size,
+                )
+            else:
+                fp_array = np.vstack(
+                    [
+                        concatenated_native_1d_fingerprint(dp.mol).astype(np.single)
+                        for dp in mol_data
+                    ]
+                )
+            X_d = fp_array if X_d is None or isinstance(X_d, list) else np.hstack([X_d, fp_array])
+
+        if add_3d_geometry_graphs:
+            X_3d = _load_geometry_graph_cache(
+                Path(geometry_graph_cache_path) if geometry_graph_cache_path is not None else None,
+                N,
+            )
+            if X_3d is None:
+                X_3d = [
+                    _geometry_graph_from_mol(
+                        dp.mol,
+                        geometry_graph_backend,
+                        mace_model,
+                        mace_model_path,
+                        mace_device,
+                        mace_dtype,
+                        mace_optimize,
+                        mace_fmax,
+                        mace_num_layers,
+                        geometry_num_conformers,
+                        geometry_cache_dir,
+                        keep_h,
+                        add_h,
+                        ignore_stereo,
+                        reorder_atoms,
+                    )
+                    for dp in mol_data
+                ]
+                _save_geometry_graph_cache(
+                    Path(geometry_graph_cache_path)
+                    if geometry_graph_cache_path is not None
+                    else None,
+                    X_3d,
+                )
+        else:
+            X_3d = [None] * N
+        for dp, desc in zip(mol_data, X_d):
+            setattr(dp, "x_d", desc)
+        for dp, graph in zip(mol_data, X_3d):
+            setattr(dp, "x_3d", graph)
+
+        return [mol_data], []
+
+    if len(smiss) > 0:
+        molss = [
+            parallel_execute(
+                make_mol,
+                [(smi, keep_h, add_h, ignore_stereo, reorder_atoms) for smi in smis],
+                n_workers=n_workers,
+            )
+            for smis in smiss
+        ]
+
+    if len(rxnss) > 0:
+        rctss = [
+            parallel_execute(
+                make_mol,
+                [
+                    (
+                        f"{rct_smi}.{agt_smi}" if agt_smi else rct_smi,
+                        keep_h,
+                        add_h,
+                        ignore_stereo,
+                        reorder_atoms,
+                    )
+                    for rct_smi, agt_smi, _ in (rxn.split(">") for rxn in rxns)
+                ],
+                n_workers=n_workers,
+            )
+            for rxns in rxnss
+        ]
+
+        pdtss = [
+            parallel_execute(
+                make_mol,
+                [
+                    (pdt_smi, keep_h, add_h, ignore_stereo, reorder_atoms)
+                    for _, _, pdt_smi in (rxn.split(">") for rxn in rxns)
+                ],
+                n_workers=n_workers,
+            )
+            for rxns in rxnss
+        ]
+
+    if X_d is None and molecule_featurizers is None:
+        X_d = [None] * N
+    elif molecule_featurizers is None:
+        pass
+    else:
+        molecule_featurizers = [MoleculeFeaturizerRegistry[mf]() for mf in molecule_featurizers]
+
+        if len(smiss) > 0:
+            mol_descriptors = np.hstack(
+                [
+                    np.hstack(
+                        [
+                            np.vstack(
+                                parallel_execute(
+                                    create_and_call_object,
+                                    [(mf.__class__, (mol,)) for mol in mols],
+                                    n_workers=n_workers,
+                                )
+                            )
+                            for mf in molecule_featurizers
+                        ]
+                    )
+                    for mols in molss
+                ]
+            )
+            if X_d is None:
+                X_d = mol_descriptors
+            else:
+                X_d = np.hstack([X_d, mol_descriptors])
+
+        if len(rxnss) > 0:
+
+            def construct_row(rct, pdt, molecule_featurizers):
+                return np.hstack(
+                    [
+                        create_and_call_object(mf.__class__, (mol,))
+                        for mf in molecule_featurizers
+                        for mol in (rct, pdt)
+                    ]
+                )
+
+            rct_pdt_descriptors = np.hstack(
+                [
+                    np.vstack(
+                        parallel_execute(
+                            construct_row,
+                            [(rct, pdt, molecule_featurizers) for rct, pdt in zip(rcts, pdts)],
+                            n_workers=n_workers,
+                        )
+                    )
+                    for rcts, pdts in zip(rctss, pdtss)
+                ]
+            )
+            if X_d is None:
+                X_d = rct_pdt_descriptors
+            else:
+                X_d = np.hstack([X_d, rct_pdt_descriptors])
+
+    if use_unimol_3d and len(smiss) > 0:
+        component_embeddings = [
+            unimol_3d_embeddings(
+                smis,
+                model_name=unimol_model_name,
+                model_path=unimol_model_path,
+                cache_dir=unimol_cache_dir,
+                device=unimol_device,
+                batch_size=unimol_batch_size,
+                remove_hs=unimol_remove_hs,
+            )
+            for smis in smiss
+        ]
+        unimol_array = np.hstack(component_embeddings).astype(np.single)
+        X_d = (
+            unimol_array
+            if X_d is None or isinstance(X_d, list)
+            else np.hstack([unimol_array, X_d])
+        )
+    # Append native-dimensional MACCS, RDKit, and ECFP fingerprints.
+    if add_1d_fingerprints and len(smiss) > 0 and not use_molformer_1d and not use_chemberta_1d:
+        fp_rows = []
+        fp_dim = None
+        for i in range(N):
+            fps_i = []
+            for mols in molss:  # molss 是长度 j 的 list，每个元素是 N 个 Mol
+                mol = mols[i]
+                fp = concatenated_native_1d_fingerprint(mol)
+                fps_i.append(fp)
+            row = np.concatenate(fps_i, axis=0).astype(np.single)
+            if fp_dim is None:
+                fp_dim = row.shape[0]
+            fp_rows.append(row)
+
+        fp_array = np.vstack(fp_rows)  # shape (N, fp_dim)
+
+        if X_d is None or isinstance(X_d, list):
+            # 之前完全没有 descriptor，或在 cuikmolmaker lazy 路径里是 list[None]
+            X_d = fp_array
+        else:
+            # 正常 numpy 情况：把指纹拼在已有 descriptor 后面
+            X_d = np.hstack([X_d, fp_array])
+
+    # === 原来的 mol_data 构造保持不变 ===
+    if add_1d_fingerprints and len(smiss) > 0 and use_molformer_1d:
+        if trainable_molformer_1d:
+            component_embeddings = [
+                molformer_token_features(
+                    smis,
+                    model_name=molformer_model,
+                    max_length=molformer_max_length,
+                )
+                for smis in smiss
+            ]
+        else:
+            component_embeddings = [
+                molformer_1d_embeddings(
+                    smis,
+                    model_name=molformer_model,
+                    cache_dir=molformer_cache_dir,
+                    device=molformer_device,
+                    max_length=molformer_max_length,
+                    pooling=molformer_pooling,
+                    batch_size=molformer_batch_size,
+                )
+                for smis in smiss
+            ]
+        fp_array = np.hstack(component_embeddings).astype(np.single)
+        if X_d is None or isinstance(X_d, list):
+            X_d = fp_array
+        else:
+            X_d = np.hstack([X_d, fp_array])
+
+    if add_1d_fingerprints and len(smiss) > 0 and use_chemberta_1d:
+        component_embeddings = [
+            chemberta_1d_embeddings(
+                smis,
+                model_name=chemberta_model,
+                cache_dir=chemberta_cache_dir,
+                device=chemberta_device,
+                max_length=chemberta_max_length,
+                pooling=chemberta_pooling,
+                batch_size=chemberta_batch_size,
+            )
+            for smis in smiss
+        ]
+        fp_array = np.hstack(component_embeddings).astype(np.single)
+        if X_d is None or isinstance(X_d, list):
+            X_d = fp_array
+        else:
+            X_d = np.hstack([X_d, fp_array])
+
+    if add_3d_geometry_graphs and len(smiss) > 0:
+        X_3d = _load_geometry_graph_cache(
+            Path(geometry_graph_cache_path) if geometry_graph_cache_path is not None else None,
+            N,
+        )
+        if X_3d is None:
+            X_3d = [
+                combine_geometry_graphs(
+                    [
+                        _geometry_graph_from_mol(
+                            molss[mol_idx][i],
+                            geometry_graph_backend,
+                            mace_model,
+                            mace_model_path,
+                            mace_device,
+                            mace_dtype,
+                            mace_optimize,
+                            mace_fmax,
+                            mace_num_layers,
+                            geometry_num_conformers,
+                            geometry_cache_dir,
+                            keep_h,
+                            add_h,
+                            ignore_stereo,
+                            reorder_atoms,
+                        )
+                        for mol_idx in range(len(molss))
+                    ]
+                )
+                for i in range(N)
+            ]
+            _save_geometry_graph_cache(
+                Path(geometry_graph_cache_path) if geometry_graph_cache_path is not None else None,
+                X_3d,
+            )
+    else:
+        X_3d = [None] * N
+
+    mol_data = [
+        [
+            MoleculeDatapoint(
+                mol=molss[mol_idx][i],
+                name=smis[i],
+                y=Y[i],
+                weight=weights[i],
+                gt_mask=gt_mask[i],
+                lt_mask=lt_mask[i],
+                x_d=X_d[i],
+                x_3d=X_3d[i],
+                x_phase=None,
+                V_f=V_fss[mol_idx][i],
+                E_f=E_fss[mol_idx][i],
+                V_d=V_dss[mol_idx][i],
+            )
+            for i in range(N)
+        ]
+        for mol_idx, smis in enumerate(smiss)
+    ]
+    mol_data = [
+        [
+            MoleculeDatapoint(
+                mol=molss[mol_idx][i],
+                name=smis[i],
+                y=Y[i],
+                weight=weights[i],
+                gt_mask=gt_mask[i],
+                lt_mask=lt_mask[i],
+                x_d=X_d[i],
+                x_3d=X_3d[i],
+                x_phase=None,
+                V_f=V_fss[mol_idx][i],
+                E_f=E_fss[mol_idx][i],
+                V_d=V_dss[mol_idx][i],
+            )
+            for i in range(N)
+        ]
+        for mol_idx, smis in enumerate(smiss)
+    ]
+
+    rxn_data = [
+        [
+            ReactionDatapoint(
+                rct=rctss[rxn_idx][i],
+                pdt=pdtss[rxn_idx][i],
+                name=rxns[i],
+                y=Y[i],
+                weight=weights[i],
+                gt_mask=gt_mask[i],
+                lt_mask=lt_mask[i],
+                x_d=X_d[i],
+                x_3d=X_3d[i],
+                x_phase=None,
+            )
+            for i in range(N)
+        ]
+        for rxn_idx, rxns in enumerate(rxnss)
+    ]
+
+    return mol_data, rxn_data
+
+
+def build_data_from_files(
+    p_data: PathLike,
+    no_header_row: bool,
+    smiles_cols: Sequence[str] | None,
+    rxn_cols: Sequence[str] | None,
+    target_cols: Sequence[str] | None,
+    ignore_cols: Sequence[str] | None,
+    splits_col: str | None,
+    weight_col: str | None,
+    bounded: bool,
+    p_descriptors: PathLike,
+    p_atom_feats: dict[int, PathLike],
+    p_bond_feats: dict[int, PathLike],
+    p_atom_descs: dict[int, PathLike],
+    descriptor_cols: Sequence[str] | None = None,
+    n_workers: int = 0,
+    **featurization_kwargs: Mapping,
+) -> list[list[MoleculeDatapoint] | list[ReactionDatapoint]]:
+    smiss, rxnss, Y, weights, lt_mask, gt_mask, X_d_extra = parse_csv(
+        p_data,
+        smiles_cols,
+        rxn_cols,
+        target_cols,
+        ignore_cols,
+        splits_col,
+        weight_col,
+        descriptor_cols,
+        bounded,
+        no_header_row,
+    )
+    n_molecules = len(smiss) if smiss is not None else 0
+    n_datapoints = len(Y)
+
+    X_ds = load_input_feats_and_descs(p_descriptors, None, None, feat_desc="X_d")
+    if X_d_extra is not None:
+        if X_ds is None:
+            X_ds = X_d_extra
+        else:
+            X_ds = np.hstack([X_ds, X_d_extra])
+
+    V_fss = load_input_feats_and_descs(p_atom_feats, n_molecules, n_datapoints, feat_desc="V_f")
+    E_fss = load_input_feats_and_descs(p_bond_feats, n_molecules, n_datapoints, feat_desc="E_f")
+    V_dss = load_input_feats_and_descs(p_atom_descs, n_molecules, n_datapoints, feat_desc="V_d")
+
+    if (
+        featurization_kwargs.get("add_3d_geometry_graphs")
+        and featurization_kwargs.get("geometry_graph_backend") == "mace"
+        and featurization_kwargs.get("mace_cache_dir") is not None
+    ):
+        featurization_kwargs = dict(featurization_kwargs)
+        featurization_kwargs["geometry_graph_cache_path"] = _mace_graph_cache_path(
+            featurization_kwargs.pop("mace_cache_dir"),
+            p_data,
+            smiss,
+            featurization_kwargs["keep_h"],
+            featurization_kwargs["add_h"],
+            featurization_kwargs["ignore_stereo"],
+            featurization_kwargs["reorder_atoms"],
+            featurization_kwargs["mace_model"],
+            featurization_kwargs["mace_model_path"],
+            featurization_kwargs["mace_dtype"],
+            featurization_kwargs["mace_optimize"],
+            featurization_kwargs["mace_fmax"],
+            featurization_kwargs["mace_num_layers"],
+        )
+    else:
+        featurization_kwargs.pop("mace_cache_dir", None)
+
+    mol_data, rxn_data = make_datapoints(
+        smiss,
+        rxnss,
+        Y,
+        weights,
+        lt_mask,
+        gt_mask,
+        X_ds,
+        V_fss,
+        E_fss,
+        V_dss,
+        n_workers=n_workers,
+        **featurization_kwargs,
+    )
+
+    return mol_data + rxn_data
+
+
+def load_input_feats_and_descs(
+    paths: dict[int, PathLike] | PathLike,
+    n_molecules: int | None,
+    n_datapoints: int | None,
+    feat_desc: str,
+):
+    if paths is None:
+        return None
+
+    match feat_desc:
+        case "X_d":
+            path = paths
+            loaded_feature = np.load(path)
+            features = loaded_feature["arr_0"]
+
+        case _:
+            for index in paths:
+                if index >= n_molecules:
+                    raise ValueError(
+                        f"For {n_molecules} molecules, atom/bond features/descriptors can only be "
+                        f"specified for indices 0-{n_molecules - 1}! Got index {index}."
+                    )
+
+            features = []
+            for idx in range(n_molecules):
+                path = paths.get(idx, None)
+
+                if path is not None:
+                    loaded_feature = np.load(path)
+                    loaded_feature = [
+                        loaded_feature[f"arr_{i}"] for i in range(len(loaded_feature))
+                    ]
+                else:
+                    loaded_feature = [None] * n_datapoints
+
+                features.append(loaded_feature)
+    return features
+
+
+def make_dataset(
+    data: Sequence[MoleculeDatapoint]
+    | Sequence[MolAtomBondDatapoint]
+    | Sequence[ReactionDatapoint],
+    reaction_mode: Literal[*tuple(RxnMode.keys())] = "REAC_DIFF",
+    multi_hot_atom_featurizer_mode: Literal["V1", "V2", "ORGANIC", "RIGR"] = "V2",
+    cuikmolmaker_featurization: bool = False,
+    n_workers: int = 0,
+) -> MoleculeDataset | CuikmolmakerDataset | MolAtomBondDataset | ReactionDataset:
+    atom_featurizer = get_multi_hot_atom_featurizer(multi_hot_atom_featurizer_mode)
+    match multi_hot_atom_featurizer_mode:
+        case "RIGR":
+            bond_featurizer = RIGRBondFeaturizer()
+        case "V1" | "V2" | "ORGANIC":
+            bond_featurizer = MultiHotBondFeaturizer()
+        case _:
+            raise TypeError(
+                f"Unsupported atom featurizer mode '{multi_hot_atom_featurizer_mode=}'!"
+            )
+
+    if isinstance(data[0], MolAtomBondDatapoint):
+        extra_atom_fdim = data[0].V_f.shape[1] if data[0].V_f is not None else 0
+        extra_bond_fdim = data[0].E_f.shape[1] if data[0].E_f is not None else 0
+        featurizer = SimpleMoleculeMolGraphFeaturizer(
+            atom_featurizer=atom_featurizer,
+            bond_featurizer=bond_featurizer,
+            extra_atom_fdim=extra_atom_fdim,
+            extra_bond_fdim=extra_bond_fdim,
+        )
+        return MolAtomBondDataset(data, featurizer, n_workers=n_workers)
+
+    if isinstance(data[0], (MoleculeDatapoint, LazyMoleculeDatapoint)):
+        extra_atom_fdim = data[0].V_f.shape[1] if data[0].V_f is not None else 0
+        extra_bond_fdim = data[0].E_f.shape[1] if data[0].E_f is not None else 0
+
+        if cuikmolmaker_featurization:
+            add_h = data[0]._add_h
+            featurizer = CuikmolmakerMolGraphFeaturizer(
+                atom_featurizer_mode=multi_hot_atom_featurizer_mode,
+                extra_atom_fdim=extra_atom_fdim,
+                extra_bond_fdim=extra_bond_fdim,
+                add_h=add_h,
+            )
+            return CuikmolmakerDataset(data, featurizer)
+
+        featurizer = SimpleMoleculeMolGraphFeaturizer(
+            atom_featurizer=atom_featurizer,
+            bond_featurizer=bond_featurizer,
+            extra_atom_fdim=extra_atom_fdim,
+            extra_bond_fdim=extra_bond_fdim,
+        )
+        return MoleculeDataset(data, featurizer, n_workers=n_workers)
+
+    featurizer = CondensedGraphOfReactionFeaturizer(
+        mode_=reaction_mode, atom_featurizer=atom_featurizer, bond_featurizer=bond_featurizer
+    )
+
+    return ReactionDataset(data, featurizer, n_workers=n_workers)
+
+
+def parse_indices(idxs):
+    """Parses a string of indices into a list of integers. e.g. '0,1,2-4' -> [0, 1, 2, 3, 4]"""
+    if isinstance(idxs, str):
+        indices = []
+        for idx in idxs.split(","):
+            if "-" in idx:
+                start, end = map(int, idx.split("-"))
+                indices.extend(range(start, end + 1))
+            else:
+                indices.append(int(idx))
+        return indices
+    return idxs
+
+
+def parse_activation(cls: type[nn.Module], arguments: list | None) -> nn.Module:
+    """Parse arguments and instantiate an activation function"""
+    posargs, kwargs = [], {}
+    if arguments is not None:
+        for item in arguments:
+            if isinstance(item, dict):
+                kwargs.update(item)
+            else:
+                posargs.append(item)
+    return cls(*posargs, **kwargs)
