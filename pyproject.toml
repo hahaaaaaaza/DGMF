@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dgmf-admet"
+version = "1.0.0"
+description = "Directed Gated Molecular Fusion for ADMET property prediction"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = {text = "MIT"}
+authors = [{name = "Xiangyang Chen"}]
+keywords = [
+    "ADMET",
+    "molecular property prediction",
+    "multimodal learning",
+    "graph neural network",
+    "drug discovery",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "lightning>=2.0",
+    "numpy",
+    "pandas",
+    "rdkit",
+    "scikit-learn",
+    "scipy",
+    "torch>=2.1",
+    "astartes[molecules]",
+    "ConfigArgParse",
+    "rich",
+    "descriptastorus",
+]
+
+[project.optional-dependencies]
+paper = [
+    "gotennet==1.1.2",
+    "omegaconf",
+    "transformers==4.57.6",
+    "safetensors",
+    "optuna==4.9.0",
+    "PyTDC==1.1.15",
+]
+test = ["pytest>=8"]
+
+[project.scripts]
+dgmf = "dgmf.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["dgmf*", "chemprop*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

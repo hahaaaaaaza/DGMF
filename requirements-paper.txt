@@ -1,0 +1,19 @@
+# Install the matching PyTorch CUDA wheel before this file. See README.md.
+lightning==2.6.0
+numpy==2.3.5
+pandas==2.3.3
+scikit-learn==1.8.0
+scipy==1.17.0
+rdkit==2026.3.3
+ConfigArgParse==1.7.1
+rich==14.2.0
+descriptastorus==2.8.0
+astartes==1.3.0
+transformers==4.57.6
+safetensors==0.7.0
+optuna==4.9.0
+omegaconf==2.3.0
+gotennet==1.1.2
+torch-geometric==2.8.0
+PyTDC==1.1.15
+

@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the DGMF manuscript and its component methods."
+title: "DGMF: Directed Gated Molecular Fusion for ADMET Property Prediction"
+type: software
+version: 1.0.0
+date-released: 2026-08-06
+authors:
+  - family-names: Chen
+    given-names: Xiangyang
+license: MIT
+references:
+  - type: article
+    title: "Analyzing Learned Molecular Representations for Property Prediction"
+    authors:
+      - family-names: Yang
+        given-names: Kevin
+      - family-names: Swanson
+        given-names: Kyle
+    journal: "Journal of Chemical Information and Modeling"
+    year: 2019
+  - type: article
+    title: "Large-scale chemical language representations capture molecular structure and properties"
+    authors:
+      - family-names: Ross
+        given-names: Jerret
+    journal: "Nature Machine Intelligence"
+    year: 2022
+  - type: conference-paper
+    title: "Therapeutics Data Commons: Machine Learning Datasets and Tasks for Drug Discovery and Development"
+    authors:
+      - family-names: Huang
+        given-names: Kexin
+    year: 2021
+
