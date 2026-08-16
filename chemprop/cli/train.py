@@ -470,15 +470,21 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
             "full",
             "matched-target-agnostic",
             "shared-gate",
+            "matched-shared-gate",
+            "direction-id-gate",
             "no-residual",
             "self-attention",
         ),
         default="full",
         help=(
             "Controlled variant for ``--x-d-encoder dgmf``. "
-            "``matched-target-agnostic`` preserves the full gate parameter count but "
-            "removes target conditioning; ``shared-gate`` shares one gate across all "
-            "directions; ``no-residual`` removes the base-representation skip path; "
+                "``matched-target-agnostic`` preserves the full gate parameter count but "
+                "removes target conditioning; ``shared-gate`` shares one gate across all "
+                "directions; ``matched-shared-gate`` shares one widened gate across all "
+                "directions while exactly matching the full gate parameter count; "
+                "``direction-id-gate`` uses a shared trunk and six direction-indexed "
+                "output heads under the same exact gate parameter budget; "
+                "``no-residual`` removes the base-representation skip path; "
             "``self-attention`` replaces directional gates with tri-modal self-attention."
         ),
     )

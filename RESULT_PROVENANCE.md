@@ -17,16 +17,6 @@ The machine-readable version of this mapping is stored in
 `results/reference/result_provenance.csv`. Package versions are recorded in
 `results/reference/environment_matrix.csv`.
 
-The baseline group has mixed reproducibility status. The PyG AttentiveFP and
-adapted SGGRL runners explicitly set their training seeds, although a repeated
-prediction-hash check is still required before calling those archives
-bit-identical. The retained D-MPNN, MoLFormer, ChemBERTa-2, Uni-Mol, and
-GotenNet runs were launched through the legacy Chemprop comparison scripts,
-which did not pass `--pytorch-seed`. Their prediction files and checkpoints are
-traceable, but deterministic retraining requires a canonical rerun. In
-particular, representative ChemBERTa-2 and Uni-Mol configs record
-`data-seed = 0` and no fixed PyTorch seed.
-
 ## Archived manuscript snapshots
 
 The full-model values in `paper_dgmf_primary_metrics_full_precision.csv` are the
