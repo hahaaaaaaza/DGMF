@@ -1,0 +1,2 @@
+task_type,task,seeds,roc_mean,roc_std,prc_mean,prc_std,accuracy_mean,accuracy_std,config
+classification,pgp_broccatelli,5,0.928552386030392,0.005569870012203735,0.9336040534487582,0.005437384852631427,0.8383673469387756,0.016224168909674923,fusion_1d2d3d_embedding_xattn_molformer_gotennet

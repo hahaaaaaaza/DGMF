@@ -2252,6 +2252,8 @@ class DGMFFusionEncoder(nn.Module):
             "full",
             "matched-target-agnostic",
             "shared-gate",
+            "matched-shared-gate",
+            "direction-id-gate",
             "no-residual",
             "self-attention",
         }
@@ -2341,17 +2343,58 @@ class DGMFFusionEncoder(nn.Module):
                 ]
             )
 
-            def build_gate() -> nn.Sequential:
-                return nn.Sequential(
+            def build_gate(
+                gate_hidden: int = hidden, *, include_sigmoid: bool = True
+            ) -> nn.Sequential:
+                layers: list[nn.Module] = [
                     nn.Linear(4 * d_xd_out, hidden),
                     _clone_activation(activation),
                     nn.Dropout(dropout),
                     nn.Linear(hidden, d_xd_out),
-                    nn.Sigmoid(),
-                )
+                ]
+                if gate_hidden != hidden:
+                    layers[0] = nn.Linear(4 * d_xd_out, gate_hidden)
+                    layers[3] = nn.Linear(gate_hidden, d_xd_out)
+                if include_sigmoid:
+                    layers.append(nn.Sigmoid())
+                return nn.Sequential(*layers)
 
-            num_gates = 1 if fusion_variant == "shared-gate" else len(self.directed_pairs)
-            self.cross_gate = nn.ModuleList([build_gate() for _ in range(num_gates)])
+            self.shared_gate_input_scale: nn.Parameter | None = None
+            self.shared_gate_output_scale: nn.Parameter | None = None
+            self.direction_gate_trunk: nn.Sequential | None = None
+            self.direction_gate_trunk_scale: nn.Parameter | None = None
+            self.direction_gate_heads = nn.ModuleList()
+            if fusion_variant == "matched-shared-gate":
+                self.cross_gate = nn.ModuleList(
+                    [build_gate(6 * hidden, include_sigmoid=False)]
+                )
+                self.shared_gate_input_scale = nn.Parameter(torch.ones(4 * d_xd_out))
+                self.shared_gate_output_scale = nn.Parameter(torch.ones(d_xd_out))
+            elif fusion_variant == "direction-id-gate":
+                # The shared 4d -> 3h trunk extracts pair features for every
+                # direction. Selecting one of six equal-width output heads is
+                # the direction-ID conditioning operation. The active trunk
+                # scale makes the gate budget exactly equal to six independent
+                # 4d -> h -> d gates without introducing unused parameters.
+                direction_hidden = 3 * hidden
+                self.cross_gate = nn.ModuleList()
+                self.direction_gate_trunk = nn.Sequential(
+                    nn.Linear(4 * d_xd_out, direction_hidden),
+                    _clone_activation(activation),
+                    nn.Dropout(dropout),
+                )
+                self.direction_gate_trunk_scale = nn.Parameter(
+                    torch.ones(direction_hidden)
+                )
+                self.direction_gate_heads = nn.ModuleList(
+                    [
+                        nn.Linear(direction_hidden, d_xd_out)
+                        for _ in self.directed_pairs
+                    ]
+                )
+            else:
+                num_gates = 1 if fusion_variant == "shared-gate" else len(self.directed_pairs)
+                self.cross_gate = nn.ModuleList([build_gate() for _ in range(num_gates)])
         self.message_norm = nn.ModuleList([nn.LayerNorm(d_xd_out) for _ in range(3)])
         self.graph_delta = nn.Sequential(
             nn.Linear(d_xd_out, hidden),
@@ -2413,32 +2456,69 @@ class DGMFFusionEncoder(nn.Module):
                 gate_means.append(pair_weight)
                 directional_scores.append(pair_weight.clamp_min(1e-8))
         else:
-            gate_modules = (
-                [self.cross_gate[0]] * len(self.directed_pairs)
-                if self.fusion_variant == "shared-gate"
-                else list(self.cross_gate)
-            )
-            for gate_module, (target_idx, source_idx) in zip(
-                gate_modules, self.directed_pairs
-            ):
-                target = modalities[target_idx]
-                source = modalities[source_idx]
-                if self.fusion_variant == "matched-target-agnostic":
-                    zeros = torch.zeros_like(source)
-                    gate_input = torch.cat([source, source, zeros, source * source], dim=-1)
-                else:
+            if self.fusion_variant == "direction-id-gate":
+                if (
+                    self.direction_gate_trunk is None
+                    or self.direction_gate_trunk_scale is None
+                    or len(self.direction_gate_heads) != len(self.directed_pairs)
+                ):
+                    raise RuntimeError("Direction-ID gate modules are incomplete.")
+                for direction_idx, (target_idx, source_idx) in enumerate(
+                    self.directed_pairs
+                ):
+                    target = modalities[target_idx]
+                    source = modalities[source_idx]
                     gate_input = torch.cat(
                         [target, source, torch.abs(target - source), target * source],
                         dim=-1,
                     )
-                gate = gate_module(gate_input)
-                pair_message = gate * self.value_proj[source_idx](source)
-                messages[target_idx] = messages[target_idx] + pair_message
-                gate_means.append(gate.mean(dim=1))
-                directional_scores.append(
-                    torch.linalg.vector_norm(pair_message, dim=1)
-                    / torch.linalg.vector_norm(target, dim=1).clamp_min(1e-8)
+                    shared_features = self.direction_gate_trunk(gate_input)
+                    shared_features = (
+                        shared_features * self.direction_gate_trunk_scale
+                    )
+                    gate = torch.sigmoid(
+                        self.direction_gate_heads[direction_idx](shared_features)
+                    )
+                    pair_message = gate * self.value_proj[source_idx](source)
+                    messages[target_idx] = messages[target_idx] + pair_message
+                    gate_means.append(gate.mean(dim=1))
+                    directional_scores.append(
+                        torch.linalg.vector_norm(pair_message, dim=1)
+                        / torch.linalg.vector_norm(target, dim=1).clamp_min(1e-8)
+                    )
+            else:
+                gate_modules = (
+                    [self.cross_gate[0]] * len(self.directed_pairs)
+                    if self.fusion_variant in {"shared-gate", "matched-shared-gate"}
+                    else list(self.cross_gate)
                 )
+                for gate_module, (target_idx, source_idx) in zip(
+                    gate_modules, self.directed_pairs
+                ):
+                    target = modalities[target_idx]
+                    source = modalities[source_idx]
+                    if self.fusion_variant == "matched-target-agnostic":
+                        zeros = torch.zeros_like(source)
+                        gate_input = torch.cat([source, source, zeros, source * source], dim=-1)
+                    else:
+                        gate_input = torch.cat(
+                            [target, source, torch.abs(target - source), target * source],
+                            dim=-1,
+                        )
+                    if self.fusion_variant == "matched-shared-gate":
+                        if self.shared_gate_input_scale is None or self.shared_gate_output_scale is None:
+                            raise RuntimeError("Matched shared-gate calibration parameters are missing.")
+                        gate_logits = gate_module(gate_input * self.shared_gate_input_scale)
+                        gate = torch.sigmoid(gate_logits * self.shared_gate_output_scale)
+                    else:
+                        gate = gate_module(gate_input)
+                    pair_message = gate * self.value_proj[source_idx](source)
+                    messages[target_idx] = messages[target_idx] + pair_message
+                    gate_means.append(gate.mean(dim=1))
+                    directional_scores.append(
+                        torch.linalg.vector_norm(pair_message, dim=1)
+                        / torch.linalg.vector_norm(target, dim=1).clamp_min(1e-8)
+                    )
 
         message_scale = 1.0 if self.fusion_variant == "self-attention" else 2.0
         messages = [

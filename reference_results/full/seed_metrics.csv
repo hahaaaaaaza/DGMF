@@ -1,0 +1,61 @@
+endpoint,task,task_type,variant,seed,primary_metric,value,n_test
+Bioavailability,bioavailability_ma,classification,full,1,roc,0.6415031592949784,128
+Bioavailability,bioavailability_ma,classification,full,2,roc,0.730961090788161,128
+Bioavailability,bioavailability_ma,classification,full,3,roc,0.7050216162287994,128
+Bioavailability,bioavailability_ma,classification,full,4,roc,0.6481543066178918,128
+Bioavailability,bioavailability_ma,classification,full,5,roc,0.6704356501496508,128
+HIA,hia_hou,classification,full,1,roc,0.9810699588477366,117
+HIA,hia_hou,classification,full,2,roc,0.9740740740740741,117
+HIA,hia_hou,classification,full,3,roc,0.9839506172839507,117
+HIA,hia_hou,classification,full,4,roc,0.9703703703703703,117
+HIA,hia_hou,classification,full,5,roc,0.9790123456790123,117
+P-gp,pgp_broccatelli,classification,full,1,roc,0.9238869634764062,245
+P-gp,pgp_broccatelli,classification,full,2,roc,0.9193548387096774,245
+P-gp,pgp_broccatelli,classification,full,3,roc,0.9049586776859504,245
+P-gp,pgp_broccatelli,classification,full,4,roc,0.9302852572647294,245
+P-gp,pgp_broccatelli,classification,full,5,roc,0.9336177019461477,245
+BBB,bbb_martins,classification,full,1,roc,0.883833646028768,406
+BBB,bbb_martins,classification,full,2,roc,0.879651344590369,406
+BBB,bbb_martins,classification,full,3,roc,0.8933708567854909,406
+BBB,bbb_martins,classification,full,4,roc,0.8939571607254535,406
+BBB,bbb_martins,classification,full,5,roc,0.8752736085053159,406
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,1,roc,0.6011937059142702,135
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,2,roc,0.6294085729788388,135
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,3,roc,0.6234400434074878,135
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,4,roc,0.6036353771025503,135
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,5,roc,0.6408030385241454,135
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,1,roc,0.8411274014155713,135
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,2,roc,0.8441607684529828,135
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,3,roc,0.8532608695652174,135
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,4,roc,0.8456774519716884,135
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,5,roc,0.7895601617795753,135
+CYP3A4 Veith,cyp3a4_veith,classification,full,1,roc,0.8768395870730097,2467
+CYP3A4 Veith,cyp3a4_veith,classification,full,2,roc,0.8615787050321306,2467
+CYP3A4 Veith,cyp3a4_veith,classification,full,3,roc,0.8720833861614741,2467
+CYP3A4 Veith,cyp3a4_veith,classification,full,4,roc,0.8770694728974955,2467
+CYP3A4 Veith,cyp3a4_veith,classification,full,5,roc,0.870932288781972,2467
+hERG,herg,classification,full,1,roc,0.7913107511045655,132
+hERG,herg,classification,full,2,roc,0.7916053019145803,132
+hERG,herg,classification,full,3,roc,0.8151693667157583,132
+hERG,herg,classification,full,4,roc,0.8207658321060383,132
+hERG,herg,classification,full,5,roc,0.8054491899852725,132
+VDss,vdss_lombardo,regression,full,1,spearman,0.5619221638163945,226
+VDss,vdss_lombardo,regression,full,2,spearman,0.5150910497854582,226
+VDss,vdss_lombardo,regression,full,3,spearman,0.4648294905017089,226
+VDss,vdss_lombardo,regression,full,4,spearman,0.4616085420570312,226
+VDss,vdss_lombardo,regression,full,5,spearman,0.553308362052626,226
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,1,spearman,0.49921805621490134,243
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,2,spearman,0.4754178345077956,243
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,3,spearman,0.49758451637487733,243
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,4,spearman,0.4850382287753069,243
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,5,spearman,0.47191603478796845,243
+Microsome clearance,clearance_microsome_az,regression,full,1,spearman,0.5832340531894111,221
+Microsome clearance,clearance_microsome_az,regression,full,2,spearman,0.5320855202203766,221
+Microsome clearance,clearance_microsome_az,regression,full,3,spearman,0.591493217854632,221
+Microsome clearance,clearance_microsome_az,regression,full,4,spearman,0.5479630229073755,221
+Microsome clearance,clearance_microsome_az,regression,full,5,spearman,0.5317230668528974,221
+LD50,ld50_zhu,regression,full,1,mae,0.6123476642083898,1478
+LD50,ld50_zhu,regression,full,2,mae,0.622105202300406,1478
+LD50,ld50_zhu,regression,full,3,mae,0.6465610871447902,1478
+LD50,ld50_zhu,regression,full,4,mae,0.6464384644790256,1478
+LD50,ld50_zhu,regression,full,5,mae,0.6332908345737484,1478

@@ -68,3 +68,17 @@ def test_paper_variant_commands(
     assert ("--no-1d-fingerprints" in command) is no_1d
     assert command[command.index("--data-seed") + 1] == "1"
     assert command[command.index("--pytorch-seed") + 1] == "1"
+
+
+@pytest.mark.parametrize(
+    ("variant", "fusion_variant"),
+    [
+        ("shared_gate", "shared-gate"),
+        ("matched_shared_gate", "matched-shared-gate"),
+        ("target_agnostic", "matched-target-agnostic"),
+    ],
+)
+def test_mechanism_variant_commands(variant: str, fusion_variant: str) -> None:
+    command = build(variant)
+    assert command[command.index("--x-d-encoder") + 1] == "dgmf"
+    assert command[command.index("--embedding-fusion-variant") + 1] == fusion_variant

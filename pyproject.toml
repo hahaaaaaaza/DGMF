@@ -50,6 +50,7 @@ test = ["pytest>=8"]
 
 [project.scripts]
 dgmf = "dgmf.__main__:main"
+chemprop = "chemprop.cli.main:main"
 
 [tool.setuptools.packages.find]
 include = ["dgmf*", "chemprop*"]
