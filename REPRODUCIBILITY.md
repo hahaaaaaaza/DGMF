@@ -21,7 +21,7 @@
 - Data split: fixed Bemis-Murcko scaffold partitions, seeds 1-5
 - Split ratio target: approximately 7:1:2
 - HPO: 20 Optuna trials per endpoint
-- HPO budget: 40 epochs, patience 10
+- HPO budget: 30 epochs, patience 8
 - Final budget: 80 epochs, patience 15
 - Classification selection metric: validation AUROC
 - Regression selection metric: validation Spearman for VDss and the two
