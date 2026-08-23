@@ -1,0 +1,14 @@
+{
+  "bioavailability_ma": {"display_name": "Bioavailability", "category": "Absorption", "loader": "ADME", "tdc_name": "Bioavailability_Ma", "task_type": "classification", "primary_metric": "roc", "retained_size": 640},
+  "hia_hou": {"display_name": "HIA", "category": "Absorption", "loader": "ADME", "tdc_name": "HIA_Hou", "task_type": "classification", "primary_metric": "roc", "retained_size": 578},
+  "pgp_broccatelli": {"display_name": "P-gp", "category": "Absorption", "loader": "ADME", "tdc_name": "Pgp_Broccatelli", "task_type": "classification", "primary_metric": "roc", "retained_size": 1218},
+  "bbb_martins": {"display_name": "BBB", "category": "Distribution", "loader": "ADME", "tdc_name": "BBB_Martins", "task_type": "classification", "primary_metric": "roc", "retained_size": 2030},
+  "cyp2c9_substrate_carbonmangels": {"display_name": "CYP2C9 substrate", "category": "Metabolism", "loader": "ADME", "tdc_name": "CYP2C9_Substrate_CarbonMangels", "task_type": "classification", "primary_metric": "roc", "retained_size": 669},
+  "cyp2d6_substrate_carbonmangels": {"display_name": "CYP2D6 substrate", "category": "Metabolism", "loader": "ADME", "tdc_name": "CYP2D6_Substrate_CarbonMangels", "task_type": "classification", "primary_metric": "roc", "retained_size": 667},
+  "cyp3a4_veith": {"display_name": "CYP3A4 Veith", "category": "Metabolism", "loader": "ADME", "tdc_name": "CYP3A4_Veith", "task_type": "classification", "primary_metric": "roc", "retained_size": 12328},
+  "herg": {"display_name": "hERG", "category": "Toxicity", "loader": "Tox", "tdc_name": "hERG", "task_type": "classification", "primary_metric": "roc", "retained_size": 655},
+  "vdss_lombardo": {"display_name": "VDss", "category": "Distribution", "loader": "ADME", "tdc_name": "VDss_Lombardo", "task_type": "regression", "primary_metric": "spearman", "retained_size": 1130},
+  "clearance_hepatocyte_az": {"display_name": "Hepatocyte clearance", "category": "Clearance", "loader": "ADME", "tdc_name": "Clearance_Hepatocyte_AZ", "task_type": "regression", "primary_metric": "spearman", "retained_size": 1213},
+  "clearance_microsome_az": {"display_name": "Microsome clearance", "category": "Clearance", "loader": "ADME", "tdc_name": "Clearance_Microsome_AZ", "task_type": "regression", "primary_metric": "spearman", "retained_size": 1102},
+  "ld50_zhu": {"display_name": "LD50", "category": "Toxicity", "loader": "Tox", "tdc_name": "LD50_Zhu", "task_type": "regression", "primary_metric": "mae", "retained_size": 7385}
+}

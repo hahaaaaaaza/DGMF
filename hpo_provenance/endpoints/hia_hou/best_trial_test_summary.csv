@@ -1,0 +1,2 @@
+task_type,task,seeds,roc_mean,roc_std,prc_mean,prc_std,accuracy_mean,accuracy_std,config
+classification,hia_hou,5,0.9751440329218106,0.0031689914910582127,0.9927708513876959,0.0011652338594915633,0.9230769230769231,0.0060436477024491415,fusion_1d2d3d_embedding_xattn_molformer_gotennet

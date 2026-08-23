@@ -1,0 +1,2 @@
+task_type,task,seeds,roc_mean,roc_std,prc_mean,prc_std,accuracy_mean,accuracy_std,config
+classification,cyp3a4_veith,5,0.8680547455240664,0.003980333151640893,0.8378778795462131,0.004946195145849649,0.7854884475070937,0.0044809123973848265,fusion_1d2d3d_embedding_xattn_molformer_gotennet

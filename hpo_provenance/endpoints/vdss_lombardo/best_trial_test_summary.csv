@@ -1,0 +1,2 @@
+task_type,task,seeds,mae_mean,mae_std,rmse_mean,rmse_std,r2_mean,r2_std,spearman_mean,spearman_std,config
+regression,vdss_lombardo,5,3.6755211154778764,0.35837943426797286,10.568804193400352,4.18793982430483,-3.2761662728966856,3.026806265703875,0.542703979911739,0.04886142079986353,fusion_1d2d3d_embedding_xattn_molformer_gotennet

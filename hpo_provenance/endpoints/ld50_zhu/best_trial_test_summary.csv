@@ -1,0 +1,2 @@
+task_type,task,seeds,mae_mean,mae_std,rmse_mean,rmse_std,r2_mean,r2_std,spearman_mean,spearman_std,config
+regression,ld50_zhu,5,0.6480852080243572,0.015063190596928101,0.9209878881591242,0.01960386728379146,0.24279434128462998,0.03184889698321919,0.5799666475138227,0.02291537481656008,fusion_1d2d3d_embedding_xattn_molformer_gotennet

@@ -106,7 +106,7 @@ def artifact_rows(
                 seed_root = output_root / variant / task / f"seed_{seed}"
                 paths.extend(
                     [
-                        seed_root / "command.txt",
+                        seed_root / "command.json",
                         seed_root / "config.toml",
                         seed_root / "model_0" / "test_predictions.csv",
                         seed_root / "model_0" / "best.pt",

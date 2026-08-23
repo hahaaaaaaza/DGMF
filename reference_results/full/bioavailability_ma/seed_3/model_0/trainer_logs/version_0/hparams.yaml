@@ -1,0 +1,7 @@
+batch_norm: false
+final_lr: 4.087134737005474e-06
+gotennet_lr_scale: 0.1
+init_lr: 7.140112765212815e-06
+max_lr: 6.105981923735302e-05
+molformer_lr_scale: 0.05
+warmup_epochs: 4

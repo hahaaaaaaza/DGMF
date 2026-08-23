@@ -1,0 +1,25 @@
+{
+  "best_params": {
+    "batch_size": 16,
+    "depth": 3,
+    "dropout": 0.2,
+    "ffn_hidden_dim": 512,
+    "ffn_num_layers": 2,
+    "final_lr": 1.3758782505545149e-05,
+    "gotennet_cutoff": 4.0,
+    "gotennet_lr_scale": 0.3,
+    "gotennet_pooling": "mean",
+    "init_lr": 9.26344270189843e-06,
+    "max_lr": 0.00012843964063896302,
+    "message_hidden_dim": 300,
+    "warmup_epochs": 4,
+    "x_d_embed_dim": 128,
+    "x_d_encoder_heads": 4,
+    "x_d_fp_groups": 64
+  },
+  "best_trial": 9,
+  "best_value": 0.7894011974334717,
+  "config": "fusion_1d2d3d_embedding_xattn_molformer_gotennet",
+  "direction": "maximize",
+  "objective_metric": "val/roc"
+}

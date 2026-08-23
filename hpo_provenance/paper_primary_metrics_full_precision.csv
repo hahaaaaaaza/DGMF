@@ -1,0 +1,13 @@
+endpoint,task,task_type,variant,primary_metric,mean,std,seeds,source_device
+Bioavailability,bioavailability_ma,classification,full,roc,0.6415031592949784,0.07616253455895021,5,formal_5090_workstation
+HIA,hia_hou,classification,full,roc,0.9760493827160494,0.007124216319137528,5,formal_5090_workstation
+P-gp,pgp_broccatelli,classification,full,roc,0.9264462809917356,0.006997118155084572,5,formal_5090_workstation
+BBB,bbb_martins,classification,full,roc,0.8929409005628518,0.010247225780348068,5,formal_5090_workstation
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,roc,0.6224633749321759,0.021028214692056936,5,formal_5090_workstation
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,roc,0.8287917087967644,0.013928646135226715,5,formal_5090_workstation
+CYP3A4 Veith,cyp3a4_veith,classification,full,roc,0.8683583683111232,0.005299611419613605,5,formal_5090_workstation
+hERG,herg,classification,full,roc,0.8158762886597939,0.016136707448379337,5,formal_5090_workstation
+VDss,vdss_lombardo,regression,full,spearman,0.5424512087382838,0.02886196073008253,5,formal_5090_workstation
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,spearman,0.4822253982490151,0.0354139519365599,5,formal_5090_workstation
+Microsome clearance,clearance_microsome_az,regression,full,spearman,0.5645759991516448,0.03382211626333652,5,formal_5090_workstation
+LD50,ld50_zhu,regression,full,mae,0.6350965474018946,0.0156739512459855,5,formal_5090_workstation

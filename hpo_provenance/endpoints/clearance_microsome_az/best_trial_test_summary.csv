@@ -1,0 +1,2 @@
+task_type,task,seeds,mae_mean,mae_std,rmse_mean,rmse_std,r2_mean,r2_std,spearman_mean,spearman_std,config
+regression,clearance_microsome_az,5,23.423978762029865,1.8751825168936604,39.60559851101266,2.3763280125588455,0.15237804475023273,0.10457750754538617,0.5582535171349132,0.02672890330308233,fusion_1d2d3d_embedding_xattn_molformer_gotennet

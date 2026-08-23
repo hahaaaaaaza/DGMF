@@ -50,6 +50,26 @@ VARIANTS = {
         "use_molformer": True,
         "use_gotennet": True,
     },
+    "matched_shared_gate": {
+        "args": [
+            "--x-d-encoder",
+            "dgmf",
+            "--embedding-fusion-variant",
+            "matched-shared-gate",
+        ],
+        "use_molformer": True,
+        "use_gotennet": True,
+    },
+    "direction_id_gate": {
+        "args": [
+            "--x-d-encoder",
+            "dgmf",
+            "--embedding-fusion-variant",
+            "direction-id-gate",
+        ],
+        "use_molformer": True,
+        "use_gotennet": True,
+    },
     "target_agnostic": {
         "args": [
             "--x-d-encoder",

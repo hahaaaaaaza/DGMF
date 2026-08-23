@@ -1,0 +1,4 @@
+device_role,hostname,gpu,python,torch,cuda,chemprop,transformers,torch_geometric,rdkit,optuna,result_scope
+local_development_and_ablation,DESKTOP-H8VIUGK,NVIDIA GeForce RTX 4060 Laptop GPU,3.11.14,2.10.0+cu128,12.8,2.2.1,4.57.6,2.7.0,2025.09.6,4.8.0,"development; June concat and branch-removal aggregate snapshots"
+formal_5090_workstation,DESKTOP-N80T786,NVIDIA GeForce RTX 5090 D v2,3.11.15,2.11.0+cu128,12.8,2.2.1,4.57.6,2.8.0,2026.03.3,4.9.0,"formal HPO; full-model primary results; baselines; mechanism controls"
+supercomputer,not_retained,not_retained,not_retained,not_retained,not_retained,not_retained,not_retained,not_retained,not_retained,not_retained,"early exploratory HPO only; not used in retained manuscript tables"

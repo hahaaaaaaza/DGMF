@@ -1,0 +1,2 @@
+task_type,task,seeds,roc_mean,roc_std,prc_mean,prc_std,accuracy_mean,accuracy_std,config
+classification,bioavailability_ma,5,0.6373129364815432,0.07663466838659187,0.8636576073661907,0.04307295989721954,0.734375,0.02591113117465156,fusion_1d2d3d_embedding_xattn_molformer_gotennet

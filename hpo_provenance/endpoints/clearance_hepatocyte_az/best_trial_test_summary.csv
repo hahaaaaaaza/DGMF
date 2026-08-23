@@ -1,0 +1,2 @@
+task_type,task,seeds,mae_mean,mae_std,rmse_mean,rmse_std,r2_mean,r2_std,spearman_mean,spearman_std,config
+regression,clearance_hepatocyte_az,5,32.75664830309465,0.44980026164183007,47.475385854428204,1.029045255349392,0.021610748391122335,0.04220511701667372,0.4789753616833531,0.030072360383635425,fusion_1d2d3d_embedding_xattn_molformer_gotennet

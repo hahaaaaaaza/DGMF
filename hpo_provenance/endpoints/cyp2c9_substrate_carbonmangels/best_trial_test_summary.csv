@@ -1,0 +1,2 @@
+task_type,task,seeds,roc_mean,roc_std,prc_mean,prc_std,accuracy_mean,accuracy_std,config
+classification,cyp2c9_substrate_carbonmangels,5,0.6185024416711882,0.014950152194057549,0.39377570725031125,0.030662503526674795,0.7155555555555555,0.011233889546743054,fusion_1d2d3d_embedding_xattn_molformer_gotennet
