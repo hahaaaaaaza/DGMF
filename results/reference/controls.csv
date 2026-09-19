@@ -1,0 +1,25 @@
+endpoint,task,task_type,variant,primary_metric,mean,std,seeds
+Bioavailability,bioavailability_ma,classification,target_agnostic,roc,0.6490854672,0.0648296681,5
+HIA,hia_hou,classification,target_agnostic,roc,0.9771193416,0.0070717264,5
+P-gp,pgp_broccatelli,classification,target_agnostic,roc,0.9286323647,0.0084375236,5
+BBB,bbb_martins,classification,target_agnostic,roc,0.8955753596,0.0131813563,5
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,target_agnostic,roc,0.6275637547,0.0094864697,5
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,target_agnostic,roc,0.8210566229,0.0342732631,5
+CYP3A4 Veith,cyp3a4_veith,classification,target_agnostic,roc,0.8693698659,0.0062582323,5
+hERG,herg,classification,target_agnostic,roc,0.8110751105,0.0176915710,5
+VDss,vdss_lombardo,regression,target_agnostic,spearman,0.4850730665,0.0394562335,5
+Hepatocyte clearance,clearance_hepatocyte_az,regression,target_agnostic,spearman,0.4971987188,0.0196305618,5
+Microsome clearance,clearance_microsome_az,regression,target_agnostic,spearman,0.5534864032,0.0399933850,5
+LD50,ld50_zhu,regression,target_agnostic,mae,0.6405034616,0.0279874448,5
+Bioavailability,bioavailability_ma,classification,shared_gate,roc,0.6194878617,0.0771570358,5
+HIA,hia_hou,classification,shared_gate,roc,0.9754732510,0.0037219487,5
+P-gp,pgp_broccatelli,classification,shared_gate,roc,0.9262063450,0.0079193639,5
+BBB,bbb_martins,classification,shared_gate,roc,0.8981160100,0.0065453161,5
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,shared_gate,roc,0.6148128052,0.0127933054,5
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,shared_gate,roc,0.8236097068,0.0183689497,5
+CYP3A4 Veith,cyp3a4_veith,classification,shared_gate,roc,0.8690203327,0.0043620889,5
+hERG,herg,classification,shared_gate,roc,0.8058026510,0.0182804317,5
+VDss,vdss_lombardo,regression,shared_gate,spearman,0.5353944419,0.0271399272,5
+Hepatocyte clearance,clearance_hepatocyte_az,regression,shared_gate,spearman,0.4818246901,0.0056293895,5
+Microsome clearance,clearance_microsome_az,regression,shared_gate,spearman,0.5528119445,0.0184176306,5
+LD50,ld50_zhu,regression,shared_gate,mae,0.6516116507,0.0106925129,5

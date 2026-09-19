@@ -20,7 +20,7 @@ def main() -> None:
         default=ROOT
         / "results"
         / "reference"
-        / "paper_dgmf_primary_metrics_full_precision.csv",
+        / "full.csv",
     )
     parser.add_argument("--absolute-tolerance", type=float, default=0.03)
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-"""Run the deterministic DGMF experiments reported in the paper."""
+"""Run full-model, ablation, or mechanism-control DGMF experiments."""
 
 from __future__ import annotations
 
@@ -11,22 +11,26 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MAIN_VARIANTS = (
-    "full",
+FULL_VARIANTS = ("full",)
+ABLATION_VARIANTS = (
     "concat",
     "without_semantic",
     "without_topological",
     "without_geometric",
 )
-MECHANISM_VARIANTS = ("target_agnostic", "shared_gate")
+CONTROL_VARIANTS = ("target_agnostic", "shared_gate")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", nargs="+", default=["all"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3, 4, 5])
-    parser.add_argument("--suite", choices=["main", "mechanism", "all"], default="main")
-    parser.add_argument("--output-root", type=Path, default=ROOT / "results" / "canonical")
+    parser.add_argument(
+        "--suite",
+        choices=["full", "ablation", "controls", "all"],
+        default="full",
+    )
+    parser.add_argument("--output-root", type=Path, default=ROOT / "results" / "runs")
     parser.add_argument("--data-root", type=Path, default=ROOT / "data" / "processed")
     parser.add_argument("--molformer-model", default="ibm-research/MoLFormer-XL-both-10pct")
     parser.add_argument("--molformer-cache-dir", type=Path, default=ROOT / "molformer_1d_cache")
@@ -42,17 +46,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def selected_variants(suite: str) -> tuple[str, ...]:
-    if suite == "main":
-        return MAIN_VARIANTS
-    if suite == "mechanism":
-        return MECHANISM_VARIANTS
-    return MAIN_VARIANTS + MECHANISM_VARIANTS
+    if suite == "full":
+        return FULL_VARIANTS
+    if suite == "ablation":
+        return ABLATION_VARIANTS
+    if suite == "controls":
+        return CONTROL_VARIANTS
+    return FULL_VARIANTS + ABLATION_VARIANTS + CONTROL_VARIANTS
 
 
 def run_variant(args: argparse.Namespace, variant: str) -> None:
     command = [
         sys.executable,
-        str(ROOT / "scripts" / "run_dgmf.py"),
+        str(ROOT / "scripts" / "run_experiment.py"),
         "--variant",
         variant,
         "--tasks",
@@ -97,7 +103,7 @@ def combine_summaries(output_root: Path, variants: tuple[str, ...]) -> Path:
         frames.append(pd.read_csv(path))
     combined = pd.concat(frames, ignore_index=True)
     output_root.mkdir(parents=True, exist_ok=True)
-    output_path = output_root / "paper_suite_summary.csv"
+    output_path = output_root / "summary.csv"
     combined.to_csv(output_path, index=False)
     return output_path
 
@@ -109,7 +115,7 @@ def main() -> None:
         run_variant(args, variant)
     if not args.dry_run:
         output_path = combine_summaries(args.output_root, variants)
-        print(f"Saved canonical paper summary to {output_path}", flush=True)
+        print(f"Saved combined summary to {output_path}", flush=True)
 
 
 if __name__ == "__main__":

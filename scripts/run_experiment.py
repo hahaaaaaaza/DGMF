@@ -232,9 +232,9 @@ def build_command(
     output_dir: Path,
 ) -> list[str]:
     data_path = args.data_root / task / f"seed_{seed}.csv"
-    if not data_path.exists():
+    if not data_path.exists() and not args.dry_run:
         raise FileNotFoundError(
-            f"Missing {data_path}. Run `python scripts/prepare_tdc12.py` first."
+            f"Missing {data_path}. Run `python scripts/prepare_data.py` first."
         )
     metrics = ["roc"] if config["task_type"] == "classification" else ["mae", "spearman"]
     warmup = min(int(params["warmup_epochs"]), max(0, args.epochs - 1))
