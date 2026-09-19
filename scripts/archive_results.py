@@ -1,4 +1,4 @@
-"""Validate and freeze the complete deterministic paper result suite."""
+"""Validate a completed result suite and write an immutable artifact manifest."""
 
 from __future__ import annotations
 
@@ -12,23 +12,25 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MAIN_VARIANTS = (
-    "full",
+FULL_VARIANTS = ("full",)
+ABLATION_VARIANTS = (
     "concat",
     "without_semantic",
     "without_topological",
     "without_geometric",
 )
-MECHANISM_VARIANTS = ("target_agnostic", "shared_gate")
+CONTROL_VARIANTS = ("target_agnostic", "shared_gate")
 SEEDS = (1, 2, 3, 4, 5)
 
 
 def selected_variants(suite: str) -> tuple[str, ...]:
-    if suite == "main":
-        return MAIN_VARIANTS
-    if suite == "mechanism":
-        return MECHANISM_VARIANTS
-    return MAIN_VARIANTS + MECHANISM_VARIANTS
+    if suite == "full":
+        return FULL_VARIANTS
+    if suite == "ablation":
+        return ABLATION_VARIANTS
+    if suite == "controls":
+        return CONTROL_VARIANTS
+    return FULL_VARIANTS + ABLATION_VARIANTS + CONTROL_VARIANTS
 
 
 def sha256(path: Path) -> str:
@@ -66,14 +68,14 @@ def validate_summary(
     if observed != expected:
         missing = sorted(expected - observed)
         unexpected = sorted(observed - expected)
-        raise ValueError(f"Incomplete canonical summary. Missing={missing}; unexpected={unexpected}")
+        raise ValueError(f"Incomplete result summary. Missing={missing}; unexpected={unexpected}")
     if len(summary) != len(expected):
-        raise ValueError("Canonical summary contains duplicate variant/task rows")
+        raise ValueError("Result summary contains duplicate variant/task rows")
     if not (summary["seeds"] == len(SEEDS)).all():
         incomplete = summary.loc[summary["seeds"] != len(SEEDS), ["variant", "task", "seeds"]]
         raise ValueError(f"Non-five-seed rows:\n{incomplete.to_string(index=False)}")
     if summary[["mean", "std"]].isna().any().any():
-        raise ValueError("Canonical summary contains missing mean or standard deviation values")
+        raise ValueError("Result summary contains missing mean or standard deviation values")
 
 
 def validate_variant_manifest(path: Path, variant: str, tasks: tuple[str, ...]) -> None:
@@ -106,7 +108,7 @@ def artifact_rows(
                 seed_root = output_root / variant / task / f"seed_{seed}"
                 paths.extend(
                     [
-                        seed_root / "command.txt",
+                        seed_root / "command.json",
                         seed_root / "config.toml",
                         seed_root / "model_0" / "test_predictions.csv",
                         seed_root / "model_0" / "best.pt",
@@ -128,12 +130,16 @@ def artifact_rows(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-root", type=Path, default=ROOT / "results" / "canonical")
-    parser.add_argument("--suite", choices=["main", "mechanism", "all"], default="main")
+    parser.add_argument("--output-root", type=Path, default=ROOT / "results" / "runs")
+    parser.add_argument(
+        "--suite",
+        choices=["full", "ablation", "controls", "all"],
+        default="full",
+    )
     args = parser.parse_args()
 
     output_root = args.output_root.resolve()
-    summary_path = output_root / "paper_suite_summary.csv"
+    summary_path = output_root / "summary.csv"
     if not summary_path.exists():
         raise FileNotFoundError(summary_path)
     tasks = expected_tasks()
@@ -145,10 +151,10 @@ def main() -> None:
     paper_metrics["paper_value"] = [
         f"{mean:.4f} ({std:.4f})" for mean, std in zip(paper_metrics["mean"], paper_metrics["std"])
     ]
-    paper_metrics.to_csv(output_root / "paper_metrics_4dp.csv", index=False)
+    paper_metrics.to_csv(output_root / "formatted_results.csv", index=False)
 
     artifacts = pd.DataFrame(artifact_rows(output_root, tasks, variants))
-    artifacts.to_csv(output_root / "canonical_artifact_manifest.csv", index=False)
+    artifacts.to_csv(output_root / "artifact_manifest.csv", index=False)
     freeze = {
         "schema_version": 1,
         "frozen_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -157,11 +163,11 @@ def main() -> None:
         "tasks": list(tasks),
         "seeds": list(SEEDS),
         "summary_sha256": sha256(summary_path),
-        "paper_metrics_sha256": sha256(output_root / "paper_metrics_4dp.csv"),
-        "artifact_manifest_sha256": sha256(output_root / "canonical_artifact_manifest.csv"),
+        "formatted_results_sha256": sha256(output_root / "formatted_results.csv"),
+        "artifact_manifest_sha256": sha256(output_root / "artifact_manifest.csv"),
         "artifact_count": len(artifacts),
     }
-    (output_root / "canonical_freeze.json").write_text(
+    (output_root / "archive_manifest.json").write_text(
         json.dumps(freeze, indent=2) + "\n", encoding="utf-8"
     )
     print(

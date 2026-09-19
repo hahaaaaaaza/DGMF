@@ -1,0 +1,13 @@
+endpoint,task,task_type,variant,primary_metric,mean,std,seeds
+BBB,bbb_martins,classification,full,roc,0.8852173233270795,0.008286087922345925,5
+Bioavailability,bioavailability_ma,classification,full,roc,0.6792151646158963,0.03810402189872722,5
+CYP2C9 substrate,cyp2c9_substrate_carbonmangels,classification,full,roc,0.6196961475854585,0.01698629965844672,5
+CYP2D6 substrate,cyp2d6_substrate_carbonmangels,classification,full,roc,0.8347573306370071,0.02565841246083826,5
+CYP3A4 Veith,cyp3a4_veith,classification,full,roc,0.8717006879892164,0.006293321249567972,5
+HIA,hia_hou,classification,full,roc,0.9776954732510289,0.005454809738149676,5
+Hepatocyte clearance,clearance_hepatocyte_az,regression,full,spearman,0.48583493413216994,0.012450372509720784,5
+LD50,ld50_zhu,regression,full,mae,0.632148650541272,0.015051342198555159,5
+Microsome clearance,clearance_microsome_az,regression,full,spearman,0.5572997762049385,0.02836758670926953,5
+P-gp,pgp_broccatelli,classification,full,roc,0.9224206878165822,0.011221583788414292,5
+VDss,vdss_lombardo,regression,full,spearman,0.5113519216426438,0.04735613417636076,5
+hERG,herg,classification,full,roc,0.804860088365243,0.013406107272724831,5

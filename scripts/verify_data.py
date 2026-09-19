@@ -7,7 +7,7 @@ import csv
 import json
 from pathlib import Path
 
-from prepare_tdc12 import sample_key
+from prepare_data import sample_key
 
 
 ROOT = Path(__file__).resolve().parents[1]

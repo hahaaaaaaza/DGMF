@@ -2,7 +2,7 @@
 
 This repository is a research fork of Chemprop 2.2.1 and retains the internal
 `chemprop` namespace for compatibility. The original Chemprop MIT license is
-included at `third_party/CHEMPROP_LICENSE.txt`.
+included at `third_party/chemprop_license.txt`.
 
 DGMF adds molecular semantic and geometric featurization, directed gated
 fusion, experiment orchestration, and result-export functionality. It also

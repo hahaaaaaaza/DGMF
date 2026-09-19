@@ -22,14 +22,14 @@ def main() -> None:
         raise RuntimeError(f"Expected 12 hyperparameter rows, found {len(params)}")
 
     reference_dir = ROOT / "results" / "reference"
-    with (reference_dir / "paper_dgmf_primary_metrics_full_precision.csv").open(
+    with (reference_dir / "full.csv").open(
         encoding="utf-8", newline=""
     ) as handle:
         primary_rows = list(csv.DictReader(handle))
     if len(primary_rows) != 12 or {row["task"] for row in primary_rows} != set(endpoints):
         raise RuntimeError("The full-precision primary reference must contain all 12 endpoints")
 
-    with (reference_dir / "paper_ablation_metrics_full_precision.csv").open(
+    with (reference_dir / "ablation.csv").open(
         encoding="utf-8", newline=""
     ) as handle:
         ablation_rows = list(csv.DictReader(handle))
@@ -45,6 +45,16 @@ def main() -> None:
         variants = {row["variant"] for row in ablation_rows if row["task"] == task}
         if variants != expected_variants:
             raise RuntimeError(f"Incomplete ablation variants for {task}: {sorted(variants)}")
+
+    with (reference_dir / "controls.csv").open(encoding="utf-8", newline="") as handle:
+        control_rows = list(csv.DictReader(handle))
+    expected_controls = {"shared_gate", "target_agnostic"}
+    if len(control_rows) != 24:
+        raise RuntimeError(f"Expected 24 control reference rows, found {len(control_rows)}")
+    for task in endpoints:
+        variants = {row["variant"] for row in control_rows if row["task"] == task}
+        if variants != expected_controls:
+            raise RuntimeError(f"Incomplete control variants for {task}: {sorted(variants)}")
 
     source_path = ROOT / "chemprop" / "nn" / "fingerprint_encoder.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
@@ -79,7 +89,7 @@ def main() -> None:
         raise RuntimeError("Missing split manifests:\n" + "\n".join(missing))
     print(
         "DGMF release structure is valid: 12 endpoints, 60 complete split "
-        "manifests, full-precision primary and ablation references, and the "
+        "manifests, full-precision primary, ablation, and control references, and the "
         "DGMF model class."
     )
 
