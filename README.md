@@ -72,7 +72,7 @@ python scripts/run_suite.py --suite ablation
 python scripts/run_suite.py --suite controls
 ```
 
-All commands accept `--tasks`, `--seeds`, `--epochs`, `--patience`, and
+All commands accept --tasks, --seeds, --epochs, --patience, and
 `--output-root`. Completed seed runs are skipped unless `--force` is supplied.
 The combined result table is written to `results/runs/summary.csv`.
 
@@ -88,11 +88,6 @@ python scripts/archive_results.py --suite full --output-root results/runs
 - `results/reference/ablation.csv`: concat and branch-removal results.
 - `results/reference/controls.csv`: shared-gate and target-agnostic controls.
 
-The historical ablation table was verified directly from its archived test
-predictions. A fresh seeded retraining is a new run and is not expected to be
-bitwise identical to the historical checkpoints. The distinction is documented
-in [docs/reproducibility.md](docs/reproducibility.md) and
-[docs/result_provenance.md](docs/result_provenance.md).
 
 ## Validate the release
 
